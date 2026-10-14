@@ -479,8 +479,10 @@ static void xhci_pci_quirks(struct device *dev, struct xhci_hcd *xhci)
 	    pdev->device == PCI_DEVICE_ID_ASMEDIA_3042_XHCI)
 		xhci->quirks |= XHCI_RESET_ON_RESUME;
 
-	if (pdev->vendor == PCI_VENDOR_ID_TI && pdev->device == 0x8241)
+	if (pdev->vendor == PCI_VENDOR_ID_TI && pdev->device == 0x8241) {
 		xhci->quirks |= XHCI_LIMIT_ENDPOINT_INTERVAL_7;
+		xhci->quirks |= XHCI_RESET_ON_SHUTDOWN;
+	}
 
 	if ((pdev->vendor == PCI_VENDOR_ID_BROADCOM ||
 	     pdev->vendor == PCI_VENDOR_ID_CAVIUM) &&
@@ -950,6 +952,11 @@ static void xhci_pci_shutdown(struct usb_hcd *hcd)
 	/* Yet another workaround for spurious wakeups at shutdown with HSW */
 	if (xhci->quirks & XHCI_SPURIOUS_WAKEUP)
 		pci_set_power_state(pdev, PCI_D3hot);
+
+
+	/* kexec fails to initialize TI xHC without a PCI function reset */
+	if (xhci->quirks & XHCI_RESET_ON_SHUTDOWN)
+		pci_reset_function_locked(pdev);
 }
 
 /*-------------------------------------------------------------------------*/
