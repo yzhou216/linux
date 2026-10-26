@@ -4091,7 +4091,13 @@ static int xhci_discover_or_reset_device(struct usb_hcd *hcd,
 	ret = 0;
 
 command_cleanup:
-	for (i = 0; i < EP_CTX_PER_DEV; i++)
+	/*
+	 * Reset Device leaves the ep0 ring and dequeue pointer as they were.
+	 * After a disconnect or link error, ep0 may still point at TRBs of TDs
+	 * that were given back, so keep it blocked until Address Device
+	 * reloads its context.
+	 */
+	for (i = 1; i < EP_CTX_PER_DEV; i++)
 		virt_dev->eps[i].ep_state &= ~EP_DROP_PENDING;
 
 	xhci_free_command(xhci, reset_device_cmd);
@@ -4463,6 +4469,16 @@ static int xhci_setup_device(struct usb_hcd *hcd, struct usb_device *udev,
 	}
 	if (ret)
 		goto out;
+
+	/*
+	 * Address Device loaded the ep0 context from the input context, so
+	 * the xHC now starts at our enqueue pointer, past any TRBs of TDs
+	 * given back after a disconnect or link error.  Unblock ep0.
+	 */
+	spin_lock_irqsave(&xhci->lock, flags);
+	virt_dev->eps[0].ep_state &= ~EP_DROP_PENDING;
+	spin_unlock_irqrestore(&xhci->lock, flags);
+
 	temp_64 = xhci_read_64(xhci, &xhci->op_regs->dcbaa_ptr);
 	xhci_dbg_trace(xhci, trace_xhci_dbg_address,
 			"Op regs DCBAA ptr = %#016llx", temp_64);
